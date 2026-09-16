@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 448" role="img" aria-labelledby="title">
+  <title id="title">Shaafi Portal logo</title>
+  <rect width="448" height="448" fill="#ffffff"/>
+  <path d="M224 287H125c-35 0-64-29-64-64s29-64 64-64h35v-36c0-35 29-64 64-64s64 29 64 64v101" fill="none" stroke="#e2748b" stroke-linecap="round" stroke-linejoin="round" stroke-width="33"/>
+  <path d="M209 160h111c35 0 64 29 64 64s-29 64-64 64" fill="none" stroke="#5ca5e7" stroke-linecap="round" stroke-linejoin="round" stroke-width="33"/>
+  <path d="M160 209v111c0 35 29 64 64 64s64-29 64-64" fill="none" stroke="#87e4aa" stroke-linecap="round" stroke-linejoin="round" stroke-width="33"/>
+</svg>
