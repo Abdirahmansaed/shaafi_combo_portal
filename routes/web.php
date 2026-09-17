@@ -24,6 +24,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/api/dashboard/live-stats', [DashboardController::class, 'live'])->name('dashboard.live');
     Route::get('/combo-purchases', [ComboPurchaseController::class, 'index'])->name('combo-purchases.index');
+    Route::get('/combo-purchases/export/pdf', [ComboPurchaseController::class, 'exportPdf'])->name('combo-purchases.export-pdf');
     Route::get('/combo-purchases/{id}', [ComboPurchaseController::class, 'show'])->name('combo-purchases.show');
     Route::get('/subscribers', [SubscriberController::class, 'index'])->name('subscribers.index');
     Route::get('/subscribers/{id}', [SubscriberController::class, 'show'])->name('subscribers.show');
@@ -31,6 +32,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/active-subscribers', [ActiveSubscriberController::class, 'index'])->name('active-subscribers.index');
     Route::post('/active-subscribers/{activeSubscriber}/complete', [ActiveSubscriberController::class, 'complete'])->name('active-subscribers.complete');
     Route::get('/reports', [ReportController::class, 'index'])->middleware('role:SUPERADMIN')->name('reports.index');
+    Route::get('/reports/agent-performance/export/pdf', [ReportController::class, 'exportAgentPerformancePdf'])->middleware('role:SUPERADMIN')->name('reports.agent-performance.export-pdf');
     Route::middleware('role:SUPERADMIN')->prefix('settings')->name('settings.')->group(function () {
         Route::get('/', [SettingsController::class, 'index'])->name('index');
         Route::post('/users', [SettingsController::class, 'storeUser'])->name('users.store');

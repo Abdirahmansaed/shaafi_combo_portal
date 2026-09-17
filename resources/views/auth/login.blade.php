@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Sign in · shaafi Combo portal</title>
+    <link rel="icon" type="image/png" href="{{ asset('images/shaafi-logo.png') }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>body{font-family:Inter,ui-sans-serif,system-ui,sans-serif}</style>
 </head>

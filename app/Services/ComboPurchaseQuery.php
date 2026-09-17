@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Database\Query\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ComboPurchaseQuery
@@ -28,6 +29,37 @@ class ComboPurchaseQuery
         return $query->select(['id', 'msisdn', 'product_id', 'purchase_date', 'expiry_date', 'price', 'amount_mb'])
             ->selectRaw("CASE product_id WHEN 40720 THEN 'Daily' WHEN 40721 THEN 'Weekly' WHEN 40722 THEN 'Monthly' END as package")
             ->selectRaw("CASE WHEN expiry_date >= ? THEN 'Active' ELSE 'Expired' END as status", [$now]);
+    }
+
+    /**
+     * Apply the portal's Combo Purchases filters.  The listing and PDF export
+     * deliberately call this same method so their result sets stay identical.
+     */
+    public function filteredPurchases(Request $request, $now = null): Builder
+    {
+        $now = $now ?: now();
+        $query = $this->base();
+
+        if ($request->filled('q')) {
+            $this->whereMsisdnSearch($query, (string) $request->q);
+        }
+        if ($productId = $this->productIdForPackage($request->package)) {
+            $query->where('product_id', $productId);
+        }
+        if ($request->status === 'Active') {
+            $query->where('expiry_date', '>=', $now);
+        }
+        if ($request->status === 'Expired') {
+            $query->where('expiry_date', '<', $now);
+        }
+        if ($range = $request->range) {
+            $start = $range === 'today' ? $now->copy()->startOfDay() : ($range === '7' ? $now->copy()->subDays(7) : ($range === '30' ? $now->copy()->subDays(30) : null));
+            if ($start) {
+                $query->whereBetween('purchase_date', [$start, $now]);
+            }
+        }
+
+        return $this->selectPurchase($query, $now);
     }
 
     /** Build aggregate counters using the same valid-purchase/status rules. */

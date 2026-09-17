@@ -145,6 +145,7 @@ class AuthenticationTest extends TestCase
             $this->actingAs($agent)->get(route($route))->assertOk();
         }
         $this->actingAs($agent)->get(route('reports.index'))->assertForbidden();
+        $this->actingAs($agent)->get(route('reports.agent-performance.export-pdf'))->assertForbidden();
     }
 
     public function test_business_purchase_queries_use_the_business_connection(): void

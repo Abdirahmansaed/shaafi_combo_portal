@@ -62,4 +62,14 @@ class User extends Authenticatable
     {
         return $this->isSuperAdmin() ? 'Super Admin' : 'Agent';
     }
+
+    /** Human-friendly labels for the status values stored by the portal. */
+    public function statusLabel(): string
+    {
+        return [
+            'ACTIVE' => 'Active',
+            'INIT' => 'Pending activation',
+            'DELETED' => 'Deactivated',
+        ][$this->status] ?? 'Unknown';
+    }
 }
