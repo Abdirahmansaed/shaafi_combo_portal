@@ -24,7 +24,7 @@ class DashboardController extends Controller
 
         // The source table has no product/date indexes. Calculate all cards in
         // one database pass and cache the result briefly to avoid repeat scans.
-        $summary = Cache::remember('dashboard.combo-summary.non-null-expiry.v5', now()->addHour(), function () use ($comboPurchases, $now) {
+        $summary = Cache::remember('dashboard.combo-summary.non-null-expiry.v6', now()->addHour(), function () use ($comboPurchases, $now) {
             $summary = $comboPurchases->selectSummary($comboPurchases->base(), $now, true)->first();
             $summary->baseline_id = DB::connection('mysql_business')->table(ComboPurchaseQuery::TABLE)->max('id');
             return $summary;
@@ -35,7 +35,7 @@ class DashboardController extends Controller
         // `id` is the only date-adjacent indexed column in the supplied table.
         // The latest 500k imported records cover the newest purchases while
         // keeping the chart and recent-list work within an indexed ID range.
-        $latestId = Cache::remember('dashboard.latest-purchase-id.v4', now()->addHour(), fn () => DB::connection('mysql_business')->table(self::TABLE)->max('id'));
+        $latestId = Cache::remember('dashboard.latest-purchase-id.v5', now()->addHour(), fn () => DB::connection('mysql_business')->table(self::TABLE)->max('id'));
         $recentIdFloor = max(0, $latestId - 500000);
         $startDate = $now->copy()->startOfDay()->subDays(6);
         $dailyCounts = (clone $purchases)->where('id', '>=', $recentIdFloor)->whereBetween('purchase_date', [$startDate, $now])->selectRaw('DATE(purchase_date) as purchase_day, COUNT(*) as total')->groupBy('purchase_day')->pluck('total', 'purchase_day');
@@ -56,9 +56,9 @@ class DashboardController extends Controller
      */
     public function live(ComboPurchaseQuery $comboPurchases)
     {
-        return response()->json(Cache::remember('dashboard.live-payload.v1', now()->addSecond(), function () use ($comboPurchases) {
+        return response()->json(Cache::remember('dashboard.live-payload.v2', now()->addSecond(), function () use ($comboPurchases) {
             $now = now();
-            $summary = Cache::get('dashboard.combo-summary.non-null-expiry.v5');
+            $summary = Cache::get('dashboard.combo-summary.non-null-expiry.v6');
             $latestId = DB::connection('mysql_business')->table(ComboPurchaseQuery::TABLE)->max('id');
             $recent = $comboPurchases->selectPurchase(
                 $comboPurchases->base()->where('id', '>=', max(0, $latestId - 10000)),

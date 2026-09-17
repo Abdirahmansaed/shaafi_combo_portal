@@ -15,11 +15,11 @@ class ReportController extends Controller
     {
         $this->validateAgentFilters($request);
         $now = now();
-        $summary = Cache::remember('reports.valid-purchase-summary.v1', now()->addMinutes(5), function () use ($purchases, $now) {
+        $summary = Cache::remember('reports.valid-purchase-summary.v2', now()->addMinutes(5), function () use ($purchases, $now) {
             return $purchases->selectSummary($purchases->base(), $now)
                 ->selectRaw('SUM(price) as revenue')->first();
         });
-        $latestId = Cache::remember('reports.latest-id', now()->addHour(), fn () => DB::connection('mysql_business')->table(ComboPurchaseQuery::TABLE)->max('id'));
+        $latestId = Cache::remember('reports.latest-id.v2', now()->addHour(), fn () => DB::connection('mysql_business')->table(ComboPurchaseQuery::TABLE)->max('id'));
         $trend = $purchases->base()->where('id', '>=', max(0, $latestId - 500000))
             ->whereBetween('purchase_date', [$now->copy()->subDays(6)->startOfDay(), $now])
             ->selectRaw('DATE(purchase_date) as day, COUNT(*) as total')->groupBy('day')->orderBy('day')->get();

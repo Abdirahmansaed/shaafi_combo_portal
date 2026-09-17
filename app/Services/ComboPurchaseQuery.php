@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 
 class ComboPurchaseQuery
 {
-    public const TABLE = 'data_purchase_07_2026';
+    public const TABLE = 'data_purchase_09_2026';
     public const PRODUCT_IDS = ['40720', '40721', '40722'];
     public const PRODUCTS = [40720 => 'Daily', 40721 => 'Weekly', 40722 => 'Monthly'];
     private const MINIMUM_SUFFIX_LENGTH = 7;
