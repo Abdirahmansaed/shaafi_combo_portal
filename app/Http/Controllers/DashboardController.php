@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
-    private const TABLE = 'data_purchase_07_2026';
+    private const TABLE = 'data_purchase_09_2026';
 
     private const PRODUCTS = [40720 => 'Daily', 40721 => 'Weekly', 40722 => 'Monthly'];
     private const PRODUCT_IDS = ['40720', '40721', '40722'];
