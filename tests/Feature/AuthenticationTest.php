@@ -154,7 +154,36 @@ class AuthenticationTest extends TestCase
         $query = app(ComboPurchaseQuery::class)->base();
 
         $this->assertSame('mysql_live', $query->getConnection()->getName());
-        $this->assertSame(config('database.live_purchase_table'), $query->from);
+        $this->assertStringContainsString('live_purchase_test', $query->toSql());
+    }
+
+    public function test_live_purchase_queries_combine_all_configured_tables(): void
+    {
+        $secondTable = 'live_purchase_test_two';
+        Schema::connection('mysql_live')->create($secondTable, function (Blueprint $table) {
+            $table->unsignedBigInteger('id')->primary();
+            $table->string('msisdn');
+            $table->string('product_id');
+            $table->dateTime('purchase_date');
+            $table->dateTime('expiry_date')->nullable();
+            $table->decimal('price', 10, 2)->default(0);
+            $table->unsignedInteger('amount_mb')->default(0);
+        });
+        config()->set('database.live_purchase_table', ' live_purchase_test, , '.$secondTable.' ');
+
+        \Illuminate\Support\Facades\DB::connection('mysql_live')->table('live_purchase_test')->insert([
+            'id' => 1, 'msisdn' => '252630000001', 'product_id' => '40720', 'purchase_date' => now(), 'expiry_date' => now()->addDay(), 'price' => 1, 'amount_mb' => 100,
+        ]);
+        \Illuminate\Support\Facades\DB::connection('mysql_live')->table($secondTable)->insert([
+            'id' => 2, 'msisdn' => '252630000002', 'product_id' => '40721', 'purchase_date' => now(), 'expiry_date' => now()->addWeek(), 'price' => 2, 'amount_mb' => 200,
+        ]);
+
+        $purchases = app(ComboPurchaseQuery::class);
+
+        $this->assertSame(['live_purchase_test', $secondTable], $purchases->tableNames());
+        $this->assertSame(2, $purchases->base()->count());
+        $this->assertSame(2, (int) $purchases->latestId());
+        $this->assertStringContainsString('union all', strtolower($purchases->base()->toSql()));
     }
 
     public function test_latest_valid_purchase_ignores_null_expiry_and_uses_full_expiry_datetime(): void

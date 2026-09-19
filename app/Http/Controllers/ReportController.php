@@ -14,7 +14,7 @@ class ReportController extends Controller
     {
         $this->validateAgentFilters($request);
         $now = now();
-        $summary = Cache::remember('reports.valid-purchase-summary.v2', now()->addMinutes(5), function () use ($purchases, $now) {
+        $summary = Cache::remember('reports.valid-purchase-summary.'.config('database.live_purchase_table'), now()->addMinutes(5), function () use ($purchases, $now) {
             return $purchases->selectSummary($purchases->base(), $now)
                 ->selectRaw('SUM(price) as revenue')->first();
         });

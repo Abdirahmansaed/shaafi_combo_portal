@@ -14,23 +14,39 @@ class ComboPurchaseQuery
 
     public function base(): Builder
     {
-        return DB::connection('mysql_live')->table($this->table())
-            // product_id is VARCHAR in the source table, so bind its values as
-            // strings. This is important once the product index is added.
-            ->whereIn('product_id', self::PRODUCT_IDS)
-            ->whereNotNull('expiry_date');
+        return DB::connection('mysql_live')->query()
+            ->fromSub($this->purchaseUnion(), 'live_purchases');
     }
 
-    /** Return the live source table configured through LIVE_PURCHASE_TABLE. */
-    public function table(): string
+    /**
+     * Return validated tables from the comma-separated LIVE_PURCHASE_TABLE
+     * configuration value. Empty items are ignored deliberately.
+     */
+    public function tableNames(): array
     {
-        return (string) config('database.live_purchase_table');
+        $tables = array_values(array_filter(array_map('trim', explode(',', (string) config('database.live_purchase_table'))), function (string $table) {
+            return $table !== '';
+        }));
+
+        if ($tables === []) {
+            throw new \RuntimeException('LIVE_PURCHASE_TABLE must contain at least one table name.');
+        }
+
+        foreach ($tables as $table) {
+            if (! preg_match('/^[A-Za-z0-9_]+$/', $table)) {
+                throw new \InvalidArgumentException('LIVE_PURCHASE_TABLE contains an invalid table name.');
+            }
+        }
+
+        return $tables;
     }
 
     /** Obtain the highest source ID without changing the live source table. */
     public function latestId()
     {
-        return DB::connection('mysql_live')->table($this->table())->max('id');
+        return DB::connection('mysql_live')->query()
+            ->fromSub($this->tableUnion(), 'live_purchase_ids')
+            ->max('id');
     }
 
     public function selectPurchase(Builder $query, $now = null): Builder
@@ -193,5 +209,42 @@ class ComboPurchaseQuery
             $msisdnQuery->where('msisdn', 'like', $digits.'%')
                 ->orWhere('msisdn', 'like', '+'.$digits.'%');
         });
+    }
+
+    /** Combine every configured source table without removing duplicate rows. */
+    private function tableUnion(): Builder
+    {
+        $tables = $this->tableNames();
+        $connection = DB::connection('mysql_live');
+        $union = $connection->table(array_shift($tables));
+
+        foreach ($tables as $table) {
+            $union->unionAll($connection->table($table));
+        }
+
+        return $union;
+    }
+
+    /** Apply the portal's valid-purchase rules to each table before UNION ALL. */
+    private function purchaseUnion(): Builder
+    {
+        $tables = $this->tableNames();
+        $connection = DB::connection('mysql_live');
+        $union = $this->validPurchasesForTable($connection, array_shift($tables));
+
+        foreach ($tables as $table) {
+            $union->unionAll($this->validPurchasesForTable($connection, $table));
+        }
+
+        return $union;
+    }
+
+    private function validPurchasesForTable($connection, string $table): Builder
+    {
+        return $connection->table($table)
+            // product_id is VARCHAR in the source table, so bind its values as
+            // strings. This is important once the product index is added.
+            ->whereIn('product_id', self::PRODUCT_IDS)
+            ->whereNotNull('expiry_date');
     }
 }
