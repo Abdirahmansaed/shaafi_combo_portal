@@ -59,12 +59,13 @@ class AuthenticationTest extends TestCase
             $table->timestamps();
         });
 
-        config()->set('database.connections.mysql_business', [
+        config()->set('database.connections.mysql_live', [
             'driver' => 'sqlite',
             'database' => ':memory:',
             'prefix' => '',
         ]);
-        Schema::connection('mysql_business')->create(ComboPurchaseQuery::TABLE, function (Blueprint $table) {
+        config()->set('database.live_purchase_table', 'live_purchase_test');
+        Schema::connection('mysql_live')->create(config('database.live_purchase_table'), function (Blueprint $table) {
             $table->unsignedBigInteger('id')->primary();
             $table->string('msisdn');
             $table->string('product_id');
@@ -148,18 +149,19 @@ class AuthenticationTest extends TestCase
         $this->actingAs($agent)->get(route('reports.agent-performance.export-pdf'))->assertForbidden();
     }
 
-    public function test_business_purchase_queries_use_the_business_connection(): void
+    public function test_live_purchase_queries_use_the_live_connection_and_configured_table(): void
     {
         $query = app(ComboPurchaseQuery::class)->base();
 
-        $this->assertSame('mysql_business', $query->getConnection()->getName());
+        $this->assertSame('mysql_live', $query->getConnection()->getName());
+        $this->assertSame(config('database.live_purchase_table'), $query->from);
     }
 
     public function test_latest_valid_purchase_ignores_null_expiry_and_uses_full_expiry_datetime(): void
     {
         Carbon::setTestNow('2026-09-15 12:05:56');
         try {
-            $database = \Illuminate\Support\Facades\DB::connection('mysql_business')->table(ComboPurchaseQuery::TABLE);
+            $database = \Illuminate\Support\Facades\DB::connection('mysql_live')->table(config('database.live_purchase_table'));
             $database->insert([
                 ['id' => 36747801, 'msisdn' => '+252633025078', 'product_id' => '40720', 'purchase_date' => '2026-09-14 10:30:11', 'expiry_date' => '2026-09-15 10:30:11', 'price' => 1, 'amount_mb' => 1],
                 ['id' => 36739974, 'msisdn' => '+252633025078', 'product_id' => '40720', 'purchase_date' => '2026-07-31 23:25:47', 'expiry_date' => null, 'price' => 1, 'amount_mb' => 1],
@@ -181,7 +183,7 @@ class AuthenticationTest extends TestCase
         Carbon::setTestNow('2026-09-15 12:00:00');
         try {
             $agent = $this->portalUser('ACTIVE');
-            $business = \Illuminate\Support\Facades\DB::connection('mysql_business')->table(ComboPurchaseQuery::TABLE);
+            $business = \Illuminate\Support\Facades\DB::connection('mysql_live')->table(config('database.live_purchase_table'));
             $business->insert([
                 ['id' => 1, 'msisdn' => '252630000001', 'product_id' => '40720', 'purchase_date' => '2026-09-14 10:00:00', 'expiry_date' => '2026-09-16 10:00:00', 'price' => 1, 'amount_mb' => 100],
                 ['id' => 2, 'msisdn' => '252630000001', 'product_id' => '40721', 'purchase_date' => '2026-09-15 11:00:00', 'expiry_date' => '2026-09-15 11:30:00', 'price' => 2, 'amount_mb' => 200],
@@ -231,7 +233,7 @@ class AuthenticationTest extends TestCase
     public function test_authenticated_agent_completion_is_written_only_to_portal_subscriber_actions(): void
     {
         $agent = $this->portalUser('ACTIVE');
-        \Illuminate\Support\Facades\DB::connection('mysql_business')->table(ComboPurchaseQuery::TABLE)->insert([
+        \Illuminate\Support\Facades\DB::connection('mysql_live')->table(config('database.live_purchase_table'))->insert([
             'id' => 900001, 'msisdn' => '+252633025078', 'product_id' => '40720',
             'purchase_date' => '2026-09-14 10:30:11', 'expiry_date' => '2026-09-15 10:30:11',
             'price' => 1, 'amount_mb' => 1,
@@ -242,7 +244,7 @@ class AuthenticationTest extends TestCase
         $this->assertDatabaseHas('subscriber_actions', [
             'purchase_id' => 900001, 'agent_status' => 'COMPLETED', 'done_by' => $agent->id,
         ], 'mysql_portal');
-        $this->assertSame('2026-09-15 10:30:11', \Illuminate\Support\Facades\DB::connection('mysql_business')->table(ComboPurchaseQuery::TABLE)->where('id', 900001)->value('expiry_date'));
+        $this->assertSame('2026-09-15 10:30:11', \Illuminate\Support\Facades\DB::connection('mysql_live')->table(config('database.live_purchase_table'))->where('id', 900001)->value('expiry_date'));
     }
 
     public function test_authenticated_agent_can_complete_a_pending_subscriber_once(): void

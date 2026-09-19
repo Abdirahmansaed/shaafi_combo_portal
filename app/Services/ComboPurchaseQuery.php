@@ -8,18 +8,29 @@ use Illuminate\Support\Facades\DB;
 
 class ComboPurchaseQuery
 {
-    public const TABLE = 'data_purchase_09_2026';
     public const PRODUCT_IDS = ['40720', '40721', '40722'];
     public const PRODUCTS = [40720 => 'Daily', 40721 => 'Weekly', 40722 => 'Monthly'];
     private const MINIMUM_SUFFIX_LENGTH = 7;
 
     public function base(): Builder
     {
-        return DB::connection('mysql_business')->table(self::TABLE)
+        return DB::connection('mysql_live')->table($this->table())
             // product_id is VARCHAR in the source table, so bind its values as
             // strings. This is important once the product index is added.
             ->whereIn('product_id', self::PRODUCT_IDS)
             ->whereNotNull('expiry_date');
+    }
+
+    /** Return the live source table configured through LIVE_PURCHASE_TABLE. */
+    public function table(): string
+    {
+        return (string) config('database.live_purchase_table');
+    }
+
+    /** Obtain the highest source ID without changing the live source table. */
+    public function latestId()
+    {
+        return DB::connection('mysql_live')->table($this->table())->max('id');
     }
 
     public function selectPurchase(Builder $query, $now = null): Builder
@@ -96,7 +107,7 @@ class ComboPurchaseQuery
             ->select(['msisdn', 'expiry_date'])
             ->selectRaw('ROW_NUMBER() OVER (PARTITION BY msisdn ORDER BY purchase_date DESC, id DESC) as purchase_rank');
 
-        return DB::connection('mysql_business')->query()
+        return DB::connection('mysql_live')->query()
             ->fromSub($latestPurchases, 'latest_purchases')
             ->where('purchase_rank', 1)
             ->selectRaw('COUNT(*) as total_subscribers')

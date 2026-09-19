@@ -64,6 +64,28 @@ return [
             ]) : [],
         ],
 
+        // Retained for existing business/history code. Live purchases use the
+        // separate mysql_live connection below.
+
+        'mysql_live' => [
+            'driver' => 'mysql',
+            'host' => env('LIVE_DB_HOST', '127.0.0.1'),
+            'port' => env('LIVE_DB_PORT', '3306'),
+            'database' => env('LIVE_DB_DATABASE', 'mydatabase'),
+            'username' => env('LIVE_DB_USERNAME', 'forge'),
+            'password' => env('LIVE_DB_PASSWORD', ''),
+            'unix_socket' => env('LIVE_DB_SOCKET', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                PDO::MYSQL_ATTR_SSL_CA => env('LIVE_MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+        ],
+
         'mysql_portal' => [
             'driver' => 'mysql',
             'host' => env('PORTAL_DB_HOST', '127.0.0.1'),
@@ -112,6 +134,10 @@ return [
         ],
 
     ],
+
+    // The operator changes this value in .env when the monthly live source
+    // table changes. Application code must read it through config().
+    'live_purchase_table' => env('LIVE_PURCHASE_TABLE'),
 
     /*
     |--------------------------------------------------------------------------

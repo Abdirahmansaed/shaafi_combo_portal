@@ -6,7 +6,6 @@ use App\Models\SubscriberAction;
 use App\Services\ComboPurchaseQuery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 
 class SubscriberController extends Controller
 {
@@ -19,7 +18,7 @@ class SubscriberController extends Controller
         } else {
             // `id` is indexed; using it for the bounded subscriber directory
             // avoids grouping all 36M rows on every unfiltered page request.
-            $latestId = Cache::remember('subscribers.latest-id.v2', now()->addHour(), fn () => DB::connection('mysql_business')->table(ComboPurchaseQuery::TABLE)->max('id'));
+            $latestId = Cache::remember('subscribers.latest-id.'.config('database.live_purchase_table'), now()->addHour(), fn () => $purchases->latestId());
             $base = $purchases->base()->where('id', '>=', max(0, $latestId - 100000));
         }
         // IDs are not a reliable proxy for when a customer purchased a
