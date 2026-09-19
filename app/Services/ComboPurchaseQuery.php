@@ -84,9 +84,15 @@ class ComboPurchaseQuery
      * Combo purchase.  The database ranks rows; PHP receives one aggregate
      * result rather than a collection of purchase records.
      */
-    public function selectSubscriberSummary($now): Builder
+    public function selectSubscriberSummary($now, $dateStart = null): Builder
     {
-        $latestPurchases = $this->base()
+        $latestPurchases = $this->base();
+        if ($dateStart) {
+            $latestPurchases->where('purchase_date', '>=', $dateStart)
+                ->where('purchase_date', '<', $dateStart->copy()->addDay());
+        }
+
+        $latestPurchases
             ->select(['msisdn', 'expiry_date'])
             ->selectRaw('ROW_NUMBER() OVER (PARTITION BY msisdn ORDER BY purchase_date DESC, id DESC) as purchase_rank');
 

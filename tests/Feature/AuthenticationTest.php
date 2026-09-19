@@ -205,6 +205,15 @@ class AuthenticationTest extends TestCase
             $this->actingAs($agent)->getJson(route('dashboard.live'))
                 ->assertJsonPath('stats.Total Combo Purchases', 4)
                 ->assertJsonPath('stats.Active Subscribers', 2);
+
+            $this->actingAs($agent)->getJson(route('dashboard.live', ['date' => '2026-09-14']))
+                ->assertJsonPath('stats.Total Combo Purchases', 1)
+                ->assertJsonPath('stats.Total Subscribers', 1)
+                ->assertJsonPath('stats.Active Subscribers', 1)
+                ->assertJsonPath('stats.Expired Subscribers', 0)
+                ->assertJsonPath("stats.Today's Purchases", 1)
+                ->assertJsonCount(1, 'recent_purchases')
+                ->assertJsonPath('recent_purchases.0.id', 1);
         } finally {
             Carbon::setTestNow();
         }
