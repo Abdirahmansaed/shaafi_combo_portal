@@ -14,33 +14,33 @@ class DashboardController extends Controller
     {
         set_time_limit(0);
         $now = now();
-        $selectedDate = $this->selectedDate($request);
-        $purchases = $this->purchasesForDate($comboPurchases, $selectedDate);
-        $stats = $this->liveStats($comboPurchases, $now, $selectedDate);
+        [$fromDate, $toDate] = $this->selectedRange($request);
+        $purchases = $this->purchasesForRange($comboPurchases, $fromDate, $toDate);
+        $stats = $this->liveStats($comboPurchases, $now, $fromDate, $toDate);
         $packageCounts = collect(self::PRODUCTS)->mapWithKeys(fn ($package, $productId) => [$package => $stats[$package.' Purchases']]);
 
-        $purchaseTrend = $this->purchaseTrend($purchases, $now, $selectedDate);
+        $purchaseTrend = $this->purchaseTrend($purchases, $now, $fromDate, $toDate);
         $recentPurchases = $comboPurchases->selectPurchase((clone $purchases), $now)
             ->orderByDesc('id')
-            ->simplePaginate(10)->appends($request->only('date'));
+            ->simplePaginate(10)->appends($request->only('from', 'to'));
 
-        return view('dashboard.index', compact('stats', 'packageCounts', 'purchaseTrend', 'recentPurchases', 'selectedDate'));
+        return view('dashboard.index', compact('stats', 'packageCounts', 'purchaseTrend', 'recentPurchases', 'fromDate', 'toDate'));
     }
 
     /** One-second dashboard polling endpoint; every request reads live business data. */
     public function live(Request $request, ComboPurchaseQuery $comboPurchases)
     {
         $now = now();
-        $selectedDate = $this->selectedDate($request);
-        $purchases = $this->purchasesForDate($comboPurchases, $selectedDate);
+        [$fromDate, $toDate] = $this->selectedRange($request);
+        $purchases = $this->purchasesForRange($comboPurchases, $fromDate, $toDate);
         $recent = $comboPurchases->selectPurchase((clone $purchases), $now)
             ->orderByDesc('id')->limit(10)->get();
-        $stats = $this->liveStats($comboPurchases, $now, $selectedDate);
+        $stats = $this->liveStats($comboPurchases, $now, $fromDate, $toDate);
 
         return response()->json([
             'stats' => $stats,
             'package_counts' => collect(self::PRODUCTS)->mapWithKeys(fn ($package, $productId) => [$package => $stats[$package.' Purchases']]),
-            'purchase_trend' => $this->purchaseTrend($purchases, $now, $selectedDate),
+            'purchase_trend' => $this->purchaseTrend($purchases, $now, $fromDate, $toDate),
             'recent_purchases' => $recent->map(function ($purchase) {
                     return [
                         'id' => (int) $purchase->id, 'msisdn' => $purchase->msisdn,
@@ -55,10 +55,10 @@ class DashboardController extends Controller
         ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 
-    private function liveStats(ComboPurchaseQuery $comboPurchases, $now, ?Carbon $selectedDate = null): array
+    private function liveStats(ComboPurchaseQuery $comboPurchases, $now, ?Carbon $fromDate = null, ?Carbon $toDate = null): array
     {
-        $purchases = $comboPurchases->selectSummary($this->purchasesForDate($comboPurchases, $selectedDate), $now, true)->first();
-        $subscribers = $comboPurchases->selectSubscriberSummary($now, $selectedDate)->first();
+        $purchases = $comboPurchases->selectSummary($this->purchasesForRange($comboPurchases, $fromDate, $toDate), $now, true)->first();
+        $subscribers = $comboPurchases->selectSubscriberSummary($now, $fromDate, $toDate)->first();
 
         return [
             'Total Subscribers' => (int) optional($subscribers)->total_subscribers,
@@ -68,40 +68,48 @@ class DashboardController extends Controller
             'Daily Purchases' => (int) optional($purchases)->daily,
             'Weekly Purchases' => (int) optional($purchases)->weekly,
             'Monthly Purchases' => (int) optional($purchases)->monthly,
-            "Today's Purchases" => $selectedDate ? (int) optional($purchases)->total : (int) optional($purchases)->today,
+            "Today's Purchases" => $fromDate ? (int) optional($purchases)->total : (int) optional($purchases)->today,
         ];
     }
 
-    private function selectedDate(Request $request): ?Carbon
+    private function selectedRange(Request $request): array
     {
-        $date = $request->query('date', 'all');
-        if ($date === 'all' || $date === null || $date === '') {
-            return null;
+        $from = $request->query('from');
+        $to = $request->query('to');
+        if (($from === null || $from === '') && ($to === null || $to === '')) {
+            return [null, null];
         }
 
-        $request->validate(['date' => ['required', 'date_format:Y-m-d']]);
+        $request->validate([
+            'from' => ['required', 'date_format:Y-m-d'],
+            'to' => ['required', 'date_format:Y-m-d'],
+        ]);
+        $fromDate = Carbon::createFromFormat('Y-m-d', $from)->startOfDay();
+        $toDate = Carbon::createFromFormat('Y-m-d', $to)->startOfDay();
+        if ($toDate->lt($fromDate)) {
+            abort(422, 'The To Date must be on or after the From Date.');
+        }
 
-        return Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
+        return [$fromDate, $toDate->addDay()];
     }
 
-    private function purchasesForDate(ComboPurchaseQuery $comboPurchases, ?Carbon $selectedDate)
+    private function purchasesForRange(ComboPurchaseQuery $comboPurchases, ?Carbon $fromDate, ?Carbon $toDate)
     {
         $query = $comboPurchases->base();
-        if ($selectedDate) {
-            $query->where('purchase_date', '>=', $selectedDate)
-                ->where('purchase_date', '<', $selectedDate->copy()->addDay());
+        if ($fromDate) {
+            $query->where('purchase_date', '>=', $fromDate)
+                ->where('purchase_date', '<', $toDate);
         }
 
         return $query;
     }
 
-    private function purchaseTrend($purchases, $now, ?Carbon $selectedDate): array
+    private function purchaseTrend($purchases, $now, ?Carbon $fromDate, ?Carbon $toDate): array
     {
-        if ($selectedDate) {
-            return [[
-                'label' => $selectedDate->format('d M'),
-                'total' => (int) (clone $purchases)->count(),
-            ]];
+        if ($fromDate) {
+            return (clone $purchases)->selectRaw('DATE(purchase_date) as purchase_day, COUNT(*) as total')
+                ->groupBy('purchase_day')->orderBy('purchase_day')->limit(366)->get()
+                ->map(fn ($day) => ['label' => Carbon::parse($day->purchase_day)->format('d M'), 'total' => (int) $day->total])->all();
         }
 
         $startDate = $now->copy()->startOfDay()->subDays(6);

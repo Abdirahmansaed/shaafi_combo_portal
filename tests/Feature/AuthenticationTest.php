@@ -206,7 +206,7 @@ class AuthenticationTest extends TestCase
                 ->assertJsonPath('stats.Total Combo Purchases', 4)
                 ->assertJsonPath('stats.Active Subscribers', 2);
 
-            $this->actingAs($agent)->getJson(route('dashboard.live', ['date' => '2026-09-14']))
+            $this->actingAs($agent)->getJson(route('dashboard.live', ['from' => '2026-09-14', 'to' => '2026-09-14']))
                 ->assertJsonPath('stats.Total Combo Purchases', 1)
                 ->assertJsonPath('stats.Total Subscribers', 1)
                 ->assertJsonPath('stats.Active Subscribers', 1)

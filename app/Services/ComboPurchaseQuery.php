@@ -84,12 +84,12 @@ class ComboPurchaseQuery
      * Combo purchase.  The database ranks rows; PHP receives one aggregate
      * result rather than a collection of purchase records.
      */
-    public function selectSubscriberSummary($now, $dateStart = null): Builder
+    public function selectSubscriberSummary($now, $dateStart = null, $dateEnd = null): Builder
     {
         $latestPurchases = $this->base();
         if ($dateStart) {
             $latestPurchases->where('purchase_date', '>=', $dateStart)
-                ->where('purchase_date', '<', $dateStart->copy()->addDay());
+                ->where('purchase_date', '<', $dateEnd);
         }
 
         $latestPurchases
