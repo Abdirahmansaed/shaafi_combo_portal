@@ -8,6 +8,7 @@
 (() => {
     if (window.shaafiDashboardPoller) clearInterval(window.shaafiDashboardPoller);
     let inFlight = false;
+    let refreshPending = false;
     let recentSignature = '';
     const lastUpdated = document.getElementById('dashboard-last-updated');
     const recentBody = document.getElementById('dashboard-recent-purchases');
@@ -21,6 +22,7 @@
 
     function cell(value, className = '') { const td = document.createElement('td'); td.className = `px-5 py-4 ${className}`; td.textContent = value; return td; }
     let appliedRange = dateMode.value === 'range' && fromDate.value && toDate.value ? {from: fromDate.value, to: toDate.value} : null;
+    function appliedRangeKey() { return appliedRange ? `${appliedRange.from}:${appliedRange.to}` : 'all'; }
     function renderPackageChart(counts) {
         const largest = Math.max(1, ...Object.values(counts).map(Number));
         packageChart.replaceChildren(...Object.entries(counts).map(([name, count]) => {
@@ -50,13 +52,18 @@
         });
     }
     async function refreshDashboard() {
-        if (inFlight) return;
+        if (inFlight) {
+            refreshPending = true;
+            return;
+        }
         inFlight = true;
+        const requestedRangeKey = appliedRangeKey();
         try {
             const query = new URLSearchParams(appliedRange || {});
             const response = await fetch(`{{ route('dashboard.live') }}?${query}`, {headers: {'Accept': 'application/json', 'Cache-Control': 'no-cache'}, credentials: 'same-origin', cache: 'no-store'});
             if (!response.ok) throw new Error('Live update failed');
             const data = await response.json();
+            if (requestedRangeKey !== appliedRangeKey()) return;
             Object.entries(data.stats).forEach(([label, value]) => document.querySelectorAll('[data-dashboard-stat]').forEach(node => { if (node.dataset.dashboardStat === label && node.textContent !== String(value)) node.textContent = Number(value).toLocaleString(); }));
             renderRecent(data.recent_purchases);
             renderPackageChart(data.package_counts);
@@ -64,7 +71,13 @@
             lastUpdated.textContent = `Last updated: ${data.last_updated}`;
         } catch (error) {
             console.error('Dashboard live update failed.', error);
-        } finally { inFlight = false; }
+        } finally {
+            inFlight = false;
+            if (refreshPending) {
+                refreshPending = false;
+                refreshDashboard();
+            }
+        }
     }
     function toggleRangeInputs() {
         const range = dateMode.value === 'range';
