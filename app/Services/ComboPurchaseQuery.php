@@ -80,6 +80,25 @@ class ComboPurchaseQuery
     }
 
     /**
+     * Return the current subscriber counts from each MSISDN's latest valid
+     * Combo purchase.  The database ranks rows; PHP receives one aggregate
+     * result rather than a collection of purchase records.
+     */
+    public function selectSubscriberSummary($now): Builder
+    {
+        $latestPurchases = $this->base()
+            ->select(['msisdn', 'expiry_date'])
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY msisdn ORDER BY purchase_date DESC, id DESC) as purchase_rank');
+
+        return DB::connection('mysql_business')->query()
+            ->fromSub($latestPurchases, 'latest_purchases')
+            ->where('purchase_rank', 1)
+            ->selectRaw('COUNT(*) as total_subscribers')
+            ->selectRaw('SUM(CASE WHEN expiry_date >= ? THEN 1 ELSE 0 END) as active_subscribers', [$now])
+            ->selectRaw('SUM(CASE WHEN expiry_date < ? THEN 1 ELSE 0 END) as expired_subscribers', [$now]);
+    }
+
+    /**
      * Return one subscriber's latest valid Combo purchase.
      *
      * A valid purchase has a supported product and a non-null expiry.  The

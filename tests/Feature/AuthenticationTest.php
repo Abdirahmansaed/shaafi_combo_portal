@@ -176,6 +176,40 @@ class AuthenticationTest extends TestCase
         }
     }
 
+    public function test_dashboard_live_stats_are_fresh_and_use_each_subscribers_latest_valid_purchase(): void
+    {
+        Carbon::setTestNow('2026-09-15 12:00:00');
+        try {
+            $agent = $this->portalUser('ACTIVE');
+            $business = \Illuminate\Support\Facades\DB::connection('mysql_business')->table(ComboPurchaseQuery::TABLE);
+            $business->insert([
+                ['id' => 1, 'msisdn' => '252630000001', 'product_id' => '40720', 'purchase_date' => '2026-09-14 10:00:00', 'expiry_date' => '2026-09-16 10:00:00', 'price' => 1, 'amount_mb' => 100],
+                ['id' => 2, 'msisdn' => '252630000001', 'product_id' => '40721', 'purchase_date' => '2026-09-15 11:00:00', 'expiry_date' => '2026-09-15 11:30:00', 'price' => 2, 'amount_mb' => 200],
+                ['id' => 3, 'msisdn' => '252630000002', 'product_id' => '40722', 'purchase_date' => '2026-09-15 10:00:00', 'expiry_date' => '2026-09-16 10:00:00', 'price' => 3, 'amount_mb' => 300],
+                ['id' => 4, 'msisdn' => '252630000003', 'product_id' => '40720', 'purchase_date' => '2026-09-15 10:00:00', 'expiry_date' => null, 'price' => 1, 'amount_mb' => 100],
+            ]);
+
+            $response = $this->actingAs($agent)->getJson(route('dashboard.live'));
+            $response->assertOk()
+                ->assertHeader('Cache-Control')
+                ->assertJsonPath('stats.Total Subscribers', 2)
+                ->assertJsonPath('stats.Active Subscribers', 1)
+                ->assertJsonPath('stats.Expired Subscribers', 1)
+                ->assertJsonPath('stats.Total Combo Purchases', 3)
+                ->assertJsonPath('stats.Daily Purchases', 1)
+                ->assertJsonPath('stats.Weekly Purchases', 1)
+                ->assertJsonPath('stats.Monthly Purchases', 1)
+                ->assertJsonPath("stats.Today's Purchases", 2);
+
+            $business->insert(['id' => 5, 'msisdn' => '252630000004', 'product_id' => '40720', 'purchase_date' => '2026-09-15 12:00:00', 'expiry_date' => '2026-09-16 12:00:00', 'price' => 1, 'amount_mb' => 100]);
+            $this->actingAs($agent)->getJson(route('dashboard.live'))
+                ->assertJsonPath('stats.Total Combo Purchases', 4)
+                ->assertJsonPath('stats.Active Subscribers', 2);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_authenticated_agent_completion_is_written_only_to_portal_subscriber_actions(): void
     {
         $agent = $this->portalUser('ACTIVE');
