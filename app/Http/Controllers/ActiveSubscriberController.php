@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActiveSubscriber;
+use App\Models\SubscriberAction;
 use App\Services\ComboPurchaseQuery;
 use Illuminate\Http\Request;
 
@@ -66,6 +67,17 @@ class ActiveSubscriberController extends Controller
         }
 
         $activeSubscriber->refresh()->load('doneBy');
+        // Agent Performance reads subscriber_actions. Keep the active-page
+        // workflow and report source in sync without touching live purchases.
+        SubscriberAction::updateOrCreate(
+            ['purchase_id' => $activeSubscriber->business_purchase_id],
+            [
+                'msisdn' => $activeSubscriber->subscriber_number,
+                'agent_status' => 'COMPLETED',
+                'done_by' => $activeSubscriber->done_by,
+                'completed_at' => $activeSubscriber->completed_at,
+            ]
+        );
 
         return response()->json([
             'message' => 'Subscriber marked as completed.',

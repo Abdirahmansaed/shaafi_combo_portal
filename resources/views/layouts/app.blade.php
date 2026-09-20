@@ -15,7 +15,7 @@
         <div class="mb-9 flex items-center gap-3 px-2"><img src="{{ asset('images/shaafi-portal-logo.svg') }}" alt="shaafi Combo portal" class="h-9 w-9 rounded-lg bg-white object-contain"><div><p class="font-semibold text-white">shaafi Combo portal</p><p class="text-xs text-slate-400">Management console</p></div></div>
         <nav class="space-y-1 text-sm font-medium">
             @php
-                $links = [['dashboard','Dashboard','layout-dashboard'],['active-subscribers.index','Active Subscribers','user-check'],['combo-purchases.index','Combo Purchases','receipt-text']];
+                $links = [['dashboard','Dashboard','layout-dashboard'],['active-subscribers.index','Active Subscribers','user-check'],['all-subscribers.index','All Subscribers','users'],['combo-purchases.index','Combo Purchases','receipt-text']];
                 if (auth()->user()->isSuperAdmin()) {
                     $links[] = ['reports.index','Reports','bar-chart-3'];
                     $links[] = ['settings.index','Settings','settings'];

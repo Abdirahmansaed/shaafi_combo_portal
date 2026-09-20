@@ -300,6 +300,32 @@ class AuthenticationTest extends TestCase
         $this->actingAs($agent)->postJson(route('active-subscribers.complete', $record))->assertStatus(409);
     }
 
+    public function test_all_subscribers_keeps_expired_history_and_reports_completed_work(): void
+    {
+        Carbon::setTestNow('2026-09-15 12:00:00');
+        try {
+            $agent = $this->portalUser('ACTIVE');
+            $superadmin = $this->portalUser('ACTIVE', 'SUPERADMIN');
+            \Illuminate\Support\Facades\DB::connection('mysql_live')->table(config('database.live_purchase_table'))->insert([
+                'id' => 700001, 'msisdn' => '252630000009', 'product_id' => '40720',
+                'purchase_date' => '2026-09-10 10:00:00', 'expiry_date' => '2026-09-11 10:00:00',
+                'price' => 1, 'amount_mb' => 100,
+            ]);
+
+            $this->actingAs($agent)->get(route('all-subscribers.index'))
+                ->assertOk()->assertSee('252630000009')->assertSee('Expired')->assertSee('Pending');
+            $this->actingAs($agent)->postJson(route('all-subscribers.complete', 700001))
+                ->assertOk()->assertJsonPath('status', 'COMPLETED')->assertJsonPath('done_by', 'Portal Tester');
+            $this->assertDatabaseHas('subscriber_actions', [
+                'purchase_id' => 700001, 'agent_status' => 'COMPLETED', 'done_by' => $agent->id,
+            ], 'mysql_portal');
+            $this->actingAs($superadmin)->get(route('reports.index'))
+                ->assertOk()->assertSee('Portal Tester')->assertSee('1');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     private function portalUser(string $status, string $role = 'AGENT'): User
     {
         return User::create([
