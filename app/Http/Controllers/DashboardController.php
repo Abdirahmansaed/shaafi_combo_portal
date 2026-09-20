@@ -20,8 +20,7 @@ class DashboardController extends Controller
         $packageCounts = collect(self::PRODUCTS)->mapWithKeys(fn ($package, $productId) => [$package => $stats[$package.' Purchases']]);
 
         $purchaseTrend = $this->purchaseTrend($comboPurchases, $now, $fromDate, $toDate);
-        $recentPurchases = $comboPurchases->selectPurchase((clone $purchases), $now)
-            ->orderByDesc('id')
+        $recentPurchases = $comboPurchases->selectPurchase($comboPurchases->recentPurchases(10, (int) $request->query('page', 1), $fromDate, $toDate), $now)
             ->simplePaginate(10)->appends($request->only('from', 'to'));
 
         return view('dashboard.index', compact('stats', 'packageCounts', 'purchaseTrend', 'recentPurchases', 'fromDate', 'toDate'));
@@ -32,9 +31,8 @@ class DashboardController extends Controller
     {
         $now = now();
         [$fromDate, $toDate] = $this->selectedRange($request);
-        $purchases = $this->purchasesForRange($comboPurchases, $fromDate, $toDate);
-        $recent = $comboPurchases->selectPurchase((clone $purchases), $now)
-            ->orderByDesc('id')->limit(10)->get();
+        $recent = $comboPurchases->selectPurchase($comboPurchases->recentPurchases(10, 1, $fromDate, $toDate), $now)
+            ->limit(10)->get();
         $stats = $this->liveStats($comboPurchases, $now, $fromDate, $toDate);
 
         return response()->json([

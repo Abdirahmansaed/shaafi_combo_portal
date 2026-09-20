@@ -32,7 +32,6 @@ Route::middleware('auth')->group(function () {
     Route::get('/active-subscribers', [ActiveSubscriberController::class, 'index'])->name('active-subscribers.index');
     Route::post('/active-subscribers/{activeSubscriber}/complete', [ActiveSubscriberController::class, 'complete'])->name('active-subscribers.complete');
     Route::get('/all-subscribers', [AllSubscriberController::class, 'index'])->name('all-subscribers.index');
-    Route::post('/all-subscribers/{purchaseId}/complete', [AllSubscriberController::class, 'complete'])->name('all-subscribers.complete');
     Route::get('/reports', [ReportController::class, 'index'])->middleware('role:SUPERADMIN')->name('reports.index');
     Route::get('/reports/agent-performance/export/pdf', [ReportController::class, 'exportAgentPerformancePdf'])->middleware('role:SUPERADMIN')->name('reports.agent-performance.export-pdf');
     Route::middleware('role:SUPERADMIN')->prefix('settings')->name('settings.')->group(function () {

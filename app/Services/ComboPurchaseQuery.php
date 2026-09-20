@@ -180,6 +180,42 @@ class ComboPurchaseQuery
     }
 
     /**
+     * One latest valid row per canonical MSISDN across every configured
+     * source. Each table is reduced first, so the final rank never receives
+     * every raw purchase from every monthly table.
+     */
+    public function latestSubscriberPurchases(): Builder
+    {
+        $candidates = DB::connection('mysql_live')->query()
+            ->fromSub($this->subscriberCandidateUnion(), 'subscriber_candidates')
+            ->select('subscriber_candidates.*')
+            ->selectRaw("ROW_NUMBER() OVER (PARTITION BY REPLACE(msisdn, '+', '') ORDER BY purchase_date DESC, id DESC) as purchase_rank");
+
+        return DB::connection('mysql_live')->query()
+            ->fromSub($candidates, 'latest_subscriber_purchases')
+            ->where('purchase_rank', 1);
+    }
+
+    /**
+     * Keep dashboard pages bounded: take only the newest page-sized
+     * candidate set from each table, then order that small SQL union globally.
+     */
+    public function recentPurchases(int $perPage, int $page = 1, $dateStart = null, $dateEnd = null): Builder
+    {
+        $limit = ($perPage * max(1, $page)) + 1;
+        $tables = $this->tableNames();
+        $connection = DB::connection('mysql_live');
+        $union = $this->recentPurchasesForTable($connection, array_shift($tables), $limit, $dateStart, $dateEnd);
+
+        foreach ($tables as $table) {
+            $union->unionAll($this->recentPurchasesForTable($connection, $table, $limit, $dateStart, $dateEnd));
+        }
+
+        return $connection->query()->fromSub($union, 'recent_live_purchases')
+            ->orderByDesc('purchase_date')->orderByDesc('id');
+    }
+
+    /**
      * Return one subscriber's latest valid Combo purchase.
      *
      * A valid purchase has a supported product and a non-null expiry.  The
@@ -324,11 +360,20 @@ class ComboPurchaseQuery
         $purchases = $this->validPurchasesForTable($connection, $table);
         $this->applyPurchaseDateRange($purchases, $dateStart, $dateEnd);
 
-        $ranked = $purchases->select(['id', 'msisdn', 'purchase_date', 'expiry_date'])
-            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY msisdn ORDER BY purchase_date DESC, id DESC) as purchase_rank');
+        $ranked = $purchases->select(['id', 'msisdn', 'product_id', 'purchase_date', 'expiry_date', 'price', 'amount_mb'])
+            ->selectRaw("ROW_NUMBER() OVER (PARTITION BY REPLACE(msisdn, '+', '') ORDER BY purchase_date DESC, id DESC) as purchase_rank");
 
         return $connection->query()->fromSub($ranked, 'table_latest_purchases')
             ->where('purchase_rank', 1)
-            ->select(['id', 'msisdn', 'purchase_date', 'expiry_date']);
+            ->select(['id', 'msisdn', 'product_id', 'purchase_date', 'expiry_date', 'price', 'amount_mb']);
+    }
+
+    private function recentPurchasesForTable($connection, string $table, int $limit, $dateStart, $dateEnd): Builder
+    {
+        $purchases = $this->validPurchasesForTable($connection, $table);
+        $this->applyPurchaseDateRange($purchases, $dateStart, $dateEnd);
+
+        return $purchases->select(['id', 'msisdn', 'product_id', 'purchase_date', 'expiry_date', 'price', 'amount_mb'])
+            ->orderByDesc('purchase_date')->orderByDesc('id')->limit($limit);
     }
 }
