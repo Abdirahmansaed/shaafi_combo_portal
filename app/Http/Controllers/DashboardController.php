@@ -19,7 +19,7 @@ class DashboardController extends Controller
         $stats = $this->liveStats($comboPurchases, $now, $fromDate, $toDate);
         $packageCounts = collect(self::PRODUCTS)->mapWithKeys(fn ($package, $productId) => [$package => $stats[$package.' Purchases']]);
 
-        $purchaseTrend = $this->purchaseTrend($purchases, $now, $fromDate, $toDate);
+        $purchaseTrend = $this->purchaseTrend($comboPurchases, $now, $fromDate, $toDate);
         $recentPurchases = $comboPurchases->selectPurchase((clone $purchases), $now)
             ->orderByDesc('id')
             ->simplePaginate(10)->appends($request->only('from', 'to'));
@@ -40,7 +40,7 @@ class DashboardController extends Controller
         return response()->json([
             'stats' => $stats,
             'package_counts' => collect(self::PRODUCTS)->mapWithKeys(fn ($package, $productId) => [$package => $stats[$package.' Purchases']]),
-            'purchase_trend' => $this->purchaseTrend($purchases, $now, $fromDate, $toDate),
+            'purchase_trend' => $this->purchaseTrend($comboPurchases, $now, $fromDate, $toDate),
             'recent_purchases' => $recent->map(function ($purchase) {
                     return [
                         'id' => (int) $purchase->id, 'msisdn' => $purchase->msisdn,
@@ -57,7 +57,7 @@ class DashboardController extends Controller
 
     private function liveStats(ComboPurchaseQuery $comboPurchases, $now, ?Carbon $fromDate = null, ?Carbon $toDate = null): array
     {
-        $purchases = $comboPurchases->selectSummary($this->purchasesForRange($comboPurchases, $fromDate, $toDate), $now, true)->first();
+        $purchases = $comboPurchases->summary($now, $fromDate, $toDate, true);
         $subscribers = $comboPurchases->selectSubscriberSummary($now, $fromDate, $toDate)->first();
 
         return [
@@ -104,19 +104,15 @@ class DashboardController extends Controller
         return $query;
     }
 
-    private function purchaseTrend($purchases, $now, ?Carbon $fromDate, ?Carbon $toDate): array
+    private function purchaseTrend(ComboPurchaseQuery $comboPurchases, $now, ?Carbon $fromDate, ?Carbon $toDate): array
     {
         if ($fromDate) {
-            return (clone $purchases)->selectRaw('DATE(purchase_date) as purchase_day, COUNT(*) as total')
-                ->groupBy('purchase_day')->orderBy('purchase_day')->limit(366)->get()
-                ->map(fn ($day) => ['label' => Carbon::parse($day->purchase_day)->format('d M'), 'total' => (int) $day->total])->all();
+            return $comboPurchases->trendByDay($fromDate, $toDate->copy()->subDay()->endOfDay())->take(366)
+                ->map(fn ($day) => ['label' => Carbon::parse($day->day)->format('d M'), 'total' => (int) $day->total])->all();
         }
 
         $startDate = $now->copy()->startOfDay()->subDays(6);
-        $dailyCounts = (clone $purchases)->where('purchase_date', '>=', $startDate)
-            ->where('purchase_date', '<=', $now)
-            ->selectRaw('DATE(purchase_date) as purchase_day, COUNT(*) as total')
-            ->groupBy('purchase_day')->pluck('total', 'purchase_day');
+        $dailyCounts = $comboPurchases->trendByDay($startDate, $now)->pluck('total', 'day');
 
         return collect(range(0, 6))->map(function ($daysAgo) use ($now, $dailyCounts) {
             $date = $now->copy()->startOfDay()->subDays(6 - $daysAgo);

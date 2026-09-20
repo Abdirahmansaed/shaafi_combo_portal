@@ -15,13 +15,9 @@ class ReportController extends Controller
         $this->validateAgentFilters($request);
         $now = now();
         $summary = Cache::remember('reports.valid-purchase-summary.'.config('database.live_purchase_table'), now()->addMinutes(5), function () use ($purchases, $now) {
-            return $purchases->selectSummary($purchases->base(), $now)
-                ->selectRaw('SUM(price) as revenue')->first();
+            return $purchases->summary($now);
         });
-        $latestId = Cache::remember('reports.latest-id.'.config('database.live_purchase_table'), now()->addHour(), fn () => $purchases->latestId());
-        $trend = $purchases->base()->where('id', '>=', max(0, $latestId - 500000))
-            ->whereBetween('purchase_date', [$now->copy()->subDays(6)->startOfDay(), $now])
-            ->selectRaw('DATE(purchase_date) as day, COUNT(*) as total')->groupBy('day')->orderBy('day')->get();
+        $trend = $purchases->trendByDay($now->copy()->subDays(6)->startOfDay(), $now);
         $agentPerformance = $agentReport->results($request, $now);
         $agentRangeLabel = $agentReport->rangeLabel($request);
         return view('reports.index', compact('summary', 'trend', 'agentPerformance', 'agentRangeLabel'));

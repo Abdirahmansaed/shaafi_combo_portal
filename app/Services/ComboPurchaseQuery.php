@@ -44,9 +44,12 @@ class ComboPurchaseQuery
     /** Obtain the highest source ID without changing the live source table. */
     public function latestId()
     {
-        return DB::connection('mysql_live')->query()
-            ->fromSub($this->tableUnion(), 'live_purchase_ids')
-            ->max('id');
+        // Each source has its own indexed primary key. Fetching one MAX per
+        // table avoids materialising every source row in a derived UNION.
+        return collect($this->tableNames())
+            ->map(fn (string $table) => DB::connection('mysql_live')->table($table)->max('id'))
+            ->filter(fn ($id) => $id !== null)
+            ->max();
     }
 
     public function selectPurchase(Builder $query, $now = null): Builder
@@ -107,19 +110,44 @@ class ComboPurchaseQuery
     }
 
     /**
+     * Aggregate each source table in place, then add the tiny result rows in
+     * PHP. This is intentionally separate from base(): base() is retained
+     * for result listings, where individual purchase records are required.
+     */
+    public function summary($now, $dateStart = null, $dateEnd = null, bool $includeToday = false): \stdClass
+    {
+        $totals = (object) [
+            'total' => 0, 'daily' => 0, 'weekly' => 0, 'monthly' => 0,
+            'active' => 0, 'expired' => 0, 'today' => 0, 'revenue' => 0.0,
+        ];
+
+        foreach ($this->tableNames() as $table) {
+            $query = $this->validPurchasesForTable(DB::connection('mysql_live'), $table);
+            $this->applyPurchaseDateRange($query, $dateStart, $dateEnd);
+            $row = $this->selectSummary($query, $now, $includeToday)
+                ->selectRaw('COALESCE(SUM(price), 0) as revenue')
+                ->first();
+
+            foreach (['total', 'daily', 'weekly', 'monthly', 'active', 'expired', 'today'] as $field) {
+                $totals->{$field} += (int) ($row->{$field} ?? 0);
+            }
+            $totals->revenue += (float) ($row->revenue ?? 0);
+        }
+
+        return $totals;
+    }
+
+    /**
      * Return the current subscriber counts from each MSISDN's latest valid
      * Combo purchase.  The database ranks rows; PHP receives one aggregate
      * result rather than a collection of purchase records.
      */
     public function selectSubscriberSummary($now, $dateStart = null, $dateEnd = null): Builder
     {
-        $latestPurchases = $this->base();
-        if ($dateStart) {
-            $latestPurchases->where('purchase_date', '>=', $dateStart)
-                ->where('purchase_date', '<', $dateEnd);
-        }
-
-        $latestPurchases
+        // Rank each source table first. The UNION consequently contains at
+        // most one candidate per MSISDN per table, rather than every purchase.
+        $latestPurchases = DB::connection('mysql_live')->query()
+            ->fromSub($this->subscriberCandidateUnion($dateStart, $dateEnd), 'subscriber_candidates')
             ->select(['msisdn', 'expiry_date'])
             ->selectRaw('ROW_NUMBER() OVER (PARTITION BY msisdn ORDER BY purchase_date DESC, id DESC) as purchase_rank');
 
@@ -129,6 +157,26 @@ class ComboPurchaseQuery
             ->selectRaw('COUNT(*) as total_subscribers')
             ->selectRaw('SUM(CASE WHEN expiry_date >= ? THEN 1 ELSE 0 END) as active_subscribers', [$now])
             ->selectRaw('SUM(CASE WHEN expiry_date < ? THEN 1 ELSE 0 END) as expired_subscribers', [$now]);
+    }
+
+    /** Aggregate the seven-day (or requested) trend within every source table. */
+    public function trendByDay($from, $to)
+    {
+        $totals = [];
+        foreach ($this->tableNames() as $table) {
+            $rows = $this->validPurchasesForTable(DB::connection('mysql_live'), $table)
+                ->whereBetween('purchase_date', [$from, $to])
+                ->selectRaw('DATE(purchase_date) as day, COUNT(*) as total')
+                ->groupBy('day')->get();
+            foreach ($rows as $row) {
+                $totals[$row->day] = ($totals[$row->day] ?? 0) + (int) $row->total;
+            }
+        }
+
+        return collect($totals)->sortKeys()->map(fn ($total, $day) => (object) [
+            'day' => $day,
+            'total' => $total,
+        ])->values();
     }
 
     /**
@@ -246,5 +294,41 @@ class ComboPurchaseQuery
             // strings. This is important once the product index is added.
             ->whereIn('product_id', self::PRODUCT_IDS)
             ->whereNotNull('expiry_date');
+    }
+
+    private function applyPurchaseDateRange(Builder $query, $dateStart = null, $dateEnd = null): Builder
+    {
+        if ($dateStart) {
+            $query->where('purchase_date', '>=', $dateStart)
+                ->where('purchase_date', '<', $dateEnd);
+        }
+
+        return $query;
+    }
+
+    private function subscriberCandidateUnion($dateStart = null, $dateEnd = null): Builder
+    {
+        $tables = $this->tableNames();
+        $connection = DB::connection('mysql_live');
+        $union = $this->latestSubscriberCandidateForTable($connection, array_shift($tables), $dateStart, $dateEnd);
+
+        foreach ($tables as $table) {
+            $union->unionAll($this->latestSubscriberCandidateForTable($connection, $table, $dateStart, $dateEnd));
+        }
+
+        return $union;
+    }
+
+    private function latestSubscriberCandidateForTable($connection, string $table, $dateStart, $dateEnd): Builder
+    {
+        $purchases = $this->validPurchasesForTable($connection, $table);
+        $this->applyPurchaseDateRange($purchases, $dateStart, $dateEnd);
+
+        $ranked = $purchases->select(['id', 'msisdn', 'purchase_date', 'expiry_date'])
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY msisdn ORDER BY purchase_date DESC, id DESC) as purchase_rank');
+
+        return $connection->query()->fromSub($ranked, 'table_latest_purchases')
+            ->where('purchase_rank', 1)
+            ->select(['id', 'msisdn', 'purchase_date', 'expiry_date']);
     }
 }
