@@ -227,7 +227,7 @@ class AuthenticationTest extends TestCase
                 'done_by' => $agent->id,
             ]);
 
-            $response = $this->actingAs($agent)->get(route('combo-purchases.export-pdf', [
+            $response = $this->actingAs($agent)->get(route('combo-purchases.export-excel', [
                 'package' => 'Daily',
                 'status' => 'Active',
             ]));
