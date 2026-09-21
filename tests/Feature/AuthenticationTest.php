@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Models\ActiveSubscriber;
+use App\Models\SubscriberAction;
 use App\Services\ComboPurchaseQuery;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
@@ -202,6 +203,53 @@ class AuthenticationTest extends TestCase
             $this->assertSame(36747801, (int) $purchase->id);
             $this->assertSame('2026-09-15 10:30:11', $purchase->expiry_date);
             $this->assertSame('Expired', $purchase->status);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_combo_purchase_export_reuses_filters_and_streams_an_excel_report(): void
+    {
+        Carbon::setTestNow('2026-09-15 12:00:00');
+        try {
+            $agent = $this->portalUser('ACTIVE');
+            $business = \Illuminate\Support\Facades\DB::connection('mysql_live')->table(config('database.live_purchase_table'));
+            $business->insert([
+                ['id' => 810001, 'msisdn' => '252630000001', 'product_id' => '40720', 'purchase_date' => '2026-09-15 10:00:00', 'expiry_date' => '2026-09-16 10:00:00', 'price' => 1.5, 'amount_mb' => 100],
+                ['id' => 810002, 'msisdn' => '252630000002', 'product_id' => '40721', 'purchase_date' => '2026-09-15 10:00:00', 'expiry_date' => '2026-09-16 10:00:00', 'price' => 2.5, 'amount_mb' => 200],
+                ['id' => 810003, 'msisdn' => '252630000003', 'product_id' => '40720', 'purchase_date' => '2026-09-15 10:00:00', 'expiry_date' => '2026-09-15 11:00:00', 'price' => 1.5, 'amount_mb' => 100],
+                ['id' => 810004, 'msisdn' => '252630000004', 'product_id' => '40720', 'purchase_date' => '2026-09-15 10:00:00', 'expiry_date' => null, 'price' => 1.5, 'amount_mb' => 100],
+            ]);
+            SubscriberAction::create([
+                'purchase_id' => 810001,
+                'msisdn' => '252630000001',
+                'agent_status' => 'COMPLETED',
+                'done_by' => $agent->id,
+            ]);
+
+            $response = $this->actingAs($agent)->get(route('combo-purchases.export-pdf', [
+                'package' => 'Daily',
+                'status' => 'Active',
+            ]));
+
+            $response->assertOk();
+            $response->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            $response->assertDownload('combo-purchases-report-2026-09-15.xlsx');
+            $export = $response->streamedContent();
+            $this->assertStringStartsWith('PK', $export);
+
+            $path = tempnam(sys_get_temp_dir(), 'combo-export-');
+            file_put_contents($path, $export);
+            $archive = new \ZipArchive;
+            $this->assertTrue($archive->open($path) === true);
+            $worksheet = $archive->getFromName('xl/worksheets/sheet1.xml');
+            $archive->close();
+            unlink($path);
+
+            $this->assertStringContainsString('252630000001', $worksheet);
+            $this->assertStringContainsString('Completed', $worksheet);
+            $this->assertStringContainsString('Portal Tester', $worksheet);
+            $this->assertStringNotContainsString('252630000002', $worksheet);
         } finally {
             Carbon::setTestNow();
         }

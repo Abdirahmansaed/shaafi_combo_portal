@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\SubscriberAction;
 use App\Services\ComboPurchaseQuery;
 use Illuminate\Http\Request;
-use Barryvdh\DomPDF\Facade\Pdf;
-use Throwable;
+use OpenSpout\Writer\Common\Creator\WriterEntityFactory;
 
 class ComboPurchaseController extends Controller
 {
-    private const PDF_EXPORT_LIMIT = 10000;
+    private const EXPORT_CHUNK_SIZE = 500;
 
     public function index(Request $request, ComboPurchaseQuery $purchases)
     {
@@ -24,53 +24,68 @@ class ComboPurchaseController extends Controller
         return view('combo-purchases.index', compact('records'));
     }
 
-    public function exportPdf(Request $request, ComboPurchaseQuery $purchases)
+    public function exportExcel(Request $request, ComboPurchaseQuery $purchases)
     {
         $this->validateFilters($request);
         $now = now();
 
-        try {
-            $rows = '';
+        $filename = 'combo-purchases-report-'.$now->format('Y-m-d').'.xlsx';
+
+        return response()->streamDownload(function () use ($purchases, $request, $now) {
+            // OpenSpout writes each XLSX row directly to the response.
+            // Combined with bounded database batches, this keeps an
+            // unfiltered export of millions of purchases out of PHP memory.
+            $writer = WriterEntityFactory::createXLSXWriter();
+            $writer->setShouldCreateNewSheetsAutomatically(false);
+            $writer->openToFile('php://output');
+            $writer->addRow(WriterEntityFactory::createRowFromArray([
+                'ID', 'MSISDN', 'Package', 'Purchase Date', 'Expiry Date',
+                'Price', 'Status', 'Action', 'Done By',
+            ]));
+
             $lastId = 0;
-            $exported = 0;
-            // Dompdf must ultimately render one document in memory, so cap
-            // it at a practical size. Each database read is still a bounded
-            // 500-row batch: a broad filter never becomes one huge ->get().
-            while ($exported < self::PDF_EXPORT_LIMIT) {
+            while (true) {
+                // Reuse the listing's exact validated query, valid-data
+                // rules, filters, and status calculation. Keyset pagination
+                // avoids costly offsets on the live table.
                 $records = $purchases->filteredPurchases($request, $now)
-                    ->where('id', '>', $lastId)->orderBy('id')->limit(500)->get();
+                    ->where('id', '>', $lastId)
+                    ->orderBy('id')
+                    ->limit(self::EXPORT_CHUNK_SIZE)
+                    ->get();
+
                 if ($records->isEmpty()) {
                     break;
                 }
+
+                $actions = SubscriberAction::with('doneBy')
+                    ->whereIn('purchase_id', $records->pluck('id'))
+                    ->get()
+                    ->keyBy('purchase_id');
+
                 foreach ($records as $purchase) {
-                    $rows .= view('pdf.partials.combo-purchase-row', compact('purchase'))->render();
-                    $lastId = $purchase->id;
-                    ++$exported;
+                    $action = $actions[$purchase->id] ?? null;
+                    $agentStatus = optional($action)->agent_status ?: 'PENDING';
+
+                    $writer->addRow(WriterEntityFactory::createRowFromArray([
+                        $purchase->id,
+                        $purchase->msisdn,
+                        $purchase->package,
+                        $purchase->purchase_date,
+                        $purchase->expiry_date,
+                        (float) $purchase->price,
+                        $purchase->status,
+                        ucfirst(strtolower($agentStatus)),
+                        optional(optional($action)->doneBy)->displayName() ?: '—',
+                    ]));
                 }
+
+                $lastId = $records->last()->id;
             }
-            if ($exported === self::PDF_EXPORT_LIMIT && $purchases->filteredPurchases($request, $now)->where('id', '>', $lastId)->exists()) {
-                return back()->withInput()->with('error', 'This export exceeds 10,000 records. Please narrow the filters and try again.');
-            }
 
-            return Pdf::loadView('pdf.combo-purchases', [
-                'rows' => $rows,
-                'filters' => $this->filterLabels($request),
-                'generatedAt' => $now,
-            ])->setPaper('a4', 'landscape')->download('combo-purchases-report-'.$now->format('Y-m-d').'.pdf');
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return back()->withInput()->with('error', 'The Combo Purchases PDF could not be generated. Please try again.');
-        }
-    }
-
-    private function filterLabels(Request $request): array
-    {
-        return array_filter([
-            'MSISDN' => $request->filled('q') ? $request->q : null,
-            'Package' => in_array($request->package, ['Daily', 'Weekly', 'Monthly'], true) ? $request->package : null,
-            'Status' => in_array($request->status, ['Active', 'Expired'], true) ? $request->status : null,
-            'Date range' => ['today' => 'Today', '7' => 'Last 7 days', '30' => 'Last 30 days'][$request->range] ?? null,
+            $writer->close();
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
     }
 

@@ -24,7 +24,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/api/dashboard/live-stats', [DashboardController::class, 'live'])->name('dashboard.live');
     Route::get('/combo-purchases', [ComboPurchaseController::class, 'index'])->name('combo-purchases.index');
-    Route::get('/combo-purchases/export/pdf', [ComboPurchaseController::class, 'exportPdf'])->name('combo-purchases.export-pdf');
+    Route::get('/combo-purchases/export/pdf', [ComboPurchaseController::class, 'exportExcel'])->name('combo-purchases.export-pdf');
     Route::get('/combo-purchases/{id}', [ComboPurchaseController::class, 'show'])->name('combo-purchases.show');
     Route::get('/subscribers', [SubscriberController::class, 'index'])->name('subscribers.index');
     Route::get('/subscribers/{id}', [SubscriberController::class, 'show'])->name('subscribers.show');
