@@ -5,7 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\SubscriberAction;
 use App\Services\ComboPurchaseQuery;
 use Illuminate\Http\Request;
-use OpenSpout\Writer\Common\Creator\WriterEntityFactory;
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Writer\XLSX\Writer;
 
 class ComboPurchaseController extends Controller
 {
@@ -35,10 +36,9 @@ class ComboPurchaseController extends Controller
             // OpenSpout writes each XLSX row directly to the response.
             // Combined with bounded database batches, this keeps an
             // unfiltered export of millions of purchases out of PHP memory.
-            $writer = WriterEntityFactory::createXLSXWriter();
-            $writer->setShouldCreateNewSheetsAutomatically(false);
+            $writer = new Writer();
             $writer->openToFile('php://output');
-            $writer->addRow(WriterEntityFactory::createRowFromArray([
+            $writer->addRow(Row::fromValues([
                 'ID', 'MSISDN', 'Package', 'Purchase Date', 'Expiry Date',
                 'Price', 'Status', 'Action', 'Done By',
             ]));
@@ -67,7 +67,7 @@ class ComboPurchaseController extends Controller
                     $action = $actions[$purchase->id] ?? null;
                     $agentStatus = optional($action)->agent_status ?: 'PENDING';
 
-                    $writer->addRow(WriterEntityFactory::createRowFromArray([
+                    $writer->addRow(Row::fromValues([
                         $purchase->id,
                         $purchase->msisdn,
                         $purchase->package,
