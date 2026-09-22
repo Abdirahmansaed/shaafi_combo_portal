@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Carbon\Carbon;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -135,6 +136,25 @@ class ComboPurchaseQuery
         }
 
         return $totals;
+    }
+
+    /**
+     * Count every valid Combo purchase made during the current Mogadishu
+     * calendar day. This intentionally has no dashboard date-range input.
+     */
+    public function todayPurchaseCount($now = null): int
+    {
+        $mogadishuNow = ($now ? Carbon::parse($now) : Carbon::now())
+            ->setTimezone('Africa/Mogadishu');
+        $startOfToday = $mogadishuNow->copy()->startOfDay();
+        $startOfTomorrow = $startOfToday->copy()->addDay();
+
+        return collect($this->tableNames())->sum(function (string $table) use ($startOfToday, $startOfTomorrow) {
+            return $this->validPurchasesForTable(DB::connection('mysql_live'), $table)
+                ->where('purchase_date', '>=', $startOfToday)
+                ->where('purchase_date', '<', $startOfTomorrow)
+                ->count();
+        });
     }
 
     /**

@@ -290,7 +290,7 @@ class AuthenticationTest extends TestCase
                 ->assertJsonPath('stats.Total Subscribers', 1)
                 ->assertJsonPath('stats.Active Subscribers', 1)
                 ->assertJsonPath('stats.Expired Subscribers', 0)
-                ->assertJsonPath("stats.Today's Purchases", 1)
+                ->assertJsonPath("stats.Today's Purchases", 3)
                 ->assertJsonCount(1, 'recent_purchases')
                 ->assertJsonPath('recent_purchases.0.id', 1);
 
@@ -302,6 +302,26 @@ class AuthenticationTest extends TestCase
                 ->assertJsonPath('stats.Daily Purchases', 2)
                 ->assertJsonPath('stats.Weekly Purchases', 1)
                 ->assertJsonPath('stats.Monthly Purchases', 1);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_todays_purchase_count_uses_mogadishu_day_boundaries_and_ignores_dashboard_ranges(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-15 12:00:00', 'Africa/Mogadishu'));
+        try {
+            $business = \Illuminate\Support\Facades\DB::connection('mysql_live')->table(config('database.live_purchase_table'));
+            $business->insert([
+                ['id' => 11, 'msisdn' => '252630000011', 'product_id' => '40720', 'purchase_date' => '2026-09-15 00:00:00', 'expiry_date' => '2026-09-16 00:00:00', 'price' => 1, 'amount_mb' => 100],
+                ['id' => 12, 'msisdn' => '252630000012', 'product_id' => '40721', 'purchase_date' => '2026-09-15 23:59:59', 'expiry_date' => '2026-09-16 00:00:00', 'price' => 1, 'amount_mb' => 100],
+                ['id' => 13, 'msisdn' => '252630000013', 'product_id' => '40722', 'purchase_date' => '2026-09-16 00:00:00', 'expiry_date' => '2026-09-17 00:00:00', 'price' => 1, 'amount_mb' => 100],
+                ['id' => 14, 'msisdn' => '252630000014', 'product_id' => '40720', 'purchase_date' => '2026-09-14 23:59:59', 'expiry_date' => '2026-09-16 00:00:00', 'price' => 1, 'amount_mb' => 100],
+                ['id' => 15, 'msisdn' => '252630000015', 'product_id' => '40720', 'purchase_date' => '2026-09-15 10:00:00', 'expiry_date' => null, 'price' => 1, 'amount_mb' => 100],
+                ['id' => 16, 'msisdn' => '252630000016', 'product_id' => '99999', 'purchase_date' => '2026-09-15 10:00:00', 'expiry_date' => '2026-09-16 00:00:00', 'price' => 1, 'amount_mb' => 100],
+            ]);
+
+            $this->assertSame(2, app(ComboPurchaseQuery::class)->todayPurchaseCount(now()));
         } finally {
             Carbon::setTestNow();
         }

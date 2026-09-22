@@ -55,7 +55,7 @@ class DashboardController extends Controller
 
     private function liveStats(ComboPurchaseQuery $comboPurchases, $now, ?Carbon $fromDate = null, ?Carbon $toDate = null): array
     {
-        $purchases = $comboPurchases->summary($now, $fromDate, $toDate, true);
+        $purchases = $comboPurchases->summary($now, $fromDate, $toDate);
         $subscribers = $comboPurchases->selectSubscriberSummary($now, $fromDate, $toDate)->first();
 
         return [
@@ -66,7 +66,7 @@ class DashboardController extends Controller
             'Daily Purchases' => (int) optional($purchases)->daily,
             'Weekly Purchases' => (int) optional($purchases)->weekly,
             'Monthly Purchases' => (int) optional($purchases)->monthly,
-            "Today's Purchases" => $fromDate ? (int) optional($purchases)->total : (int) optional($purchases)->today,
+            "Today's Purchases" => $comboPurchases->todayPurchaseCount($now),
         ];
     }
 
